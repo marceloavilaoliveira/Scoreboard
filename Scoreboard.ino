@@ -1,7 +1,7 @@
 //----------------------------------------------------------------------------//
 // Filename    : Scoreboard.ino                                               //
 // Description : Smart Basketball Scoreboard                                  //
-// Version     : 1.0.0                                                        //
+// Version     : 1.1.0                                                        //
 // Author      : Marcelo Avila de Oliveira <marceloavilaoliveira@gmail.com>   //
 //----------------------------------------------------------------------------//
 
@@ -15,13 +15,6 @@
 // #define DEBUG_VIBR
 
 //----------------------------------------------------------------------------//
-// LIBRARIES                                                                  //
-//----------------------------------------------------------------------------//
-
-// SOUND LIBRARY
-#include <Pitches.h>
-
-//----------------------------------------------------------------------------//
 // CONSTANTS                                                                  //
 //----------------------------------------------------------------------------//
 
@@ -31,25 +24,24 @@ const int vibr_pin = 3;
 const int led_r_pin = 4;
 const int led_g_pin = 5;
 const int led_b_pin = 6;
-const int speaker_pin = 7;
 
 // TIME
-unsigned long current_time = millis();
-unsigned long score_interval = 3000;
-unsigned long vibr_interval = 3000;
-unsigned long score_time;
-unsigned long vibr_time;
+const unsigned long wait_interval = 3000;
 
 // MATH
-float percent_to_bright_factor = 100 * log10(2) / log10(255);
+const float percent_to_bright_factor = 100 * log10(2) / log10(255);
 
 //----------------------------------------------------------------------------//
 // VARIABLES                                                                  //
 //----------------------------------------------------------------------------//
 
+// TIME
+unsigned long wait_time;
+
 // STATUS
-boolean score = false;
+boolean prox = false;
 boolean vibr = false;
+boolean wait = false;
 
 //----------------------------------------------------------------------------//
 // FUNCTIONS (SETTINGS)                                                       //
@@ -62,7 +54,6 @@ void setup() {
     pinMode(led_r_pin, OUTPUT);
     pinMode(led_g_pin, OUTPUT);
     pinMode(led_b_pin, OUTPUT);
-    pinMode(speaker_pin, OUTPUT);
 
     set_led(5, 100);
 
@@ -98,69 +89,6 @@ void setup_bluetooth() {
         delay(50);
         Serial1.read();
     }
-}
-
-//----------------------------------------------------------------------------//
-// FUNCTIONS (SOUND)                                                          //
-//----------------------------------------------------------------------------//
-
-void play_tone(int note, int duration) {
-    // NOTE:
-    // 0 = BASS
-    // 1 = MID-BASS
-    // 2 = MID-TREBLE
-    // 3 = TREBLE
-    //
-    // DURATION:
-    // 0 = SHORT
-    // 1 = MID-SHORT
-    // 2 = MID-LONG
-    // 3 = LONG
-
-    #ifdef DEBUG
-        Serial.println("Playing sound");
-        Serial.println();
-    #endif
-
-    if (note < 0 || note > 3 || duration < 0 || duration > 3) {
-        return;
-    }
-
-    switch (note) {
-        case 0:
-            note = NOTE_FS3;
-            break;
-        case 1:
-            note = NOTE_C5;
-            break;
-        case 2:
-            note = NOTE_FS6;
-            break;
-        case 3:
-            note = NOTE_C8;
-            break;
-    }
-
-    switch (duration) {
-        case 0:
-            duration = 100;
-            break;
-        case 1:
-            duration = 200;
-            break;
-        case 2:
-            duration = 400;
-            break;
-        case 3:
-            duration = 800;
-            break;
-    }
-
-    tone(speaker_pin, note, duration);
-    delay(duration);
-    noTone(speaker_pin);
-
-    return;
 }
 
 //----------------------------------------------------------------------------//
@@ -253,39 +181,45 @@ void set_led(int color, int bright) {
 //----------------------------------------------------------------------------//
 
 void check_prox() {
-    if (!score) {
+    if (!prox) {
         if(digitalRead(prox_pin) == LOW) {
             #ifdef DEBUG_PROX
                 Serial.println("Proximity detected");
                 Serial.println();
             #endif
-            board(1);
+
+            prox = true;
+            if (!vibr) {
+                wait = true;
+                wait_time = millis() + wait_interval;
+            }
+            set_shot(1);
         }
     }
 }
 
 void check_vibr() {
-    if (!score) {
-        if (vibr) {
-            if (millis() > vibr_time) {
-                board(0);
-            }
-        } else {
-            if(digitalRead(vibr_pin) == HIGH) {
-                #ifdef DEBUG_PROX
-                    Serial.println("Vibration detected");
-                    Serial.println();
-                #endif
-                vibr = true;
-                vibr_time = millis() + vibr_interval;
-                set_led(1, 100);
-            }
+    if (!prox && !vibr) {
+        if(digitalRead(vibr_pin) == HIGH) {
+            #ifdef DEBUG_PROX
+                Serial.println("Vibration detected");
+                Serial.println();
+            #endif
+
+            vibr = true;
+            wait = true;
+            wait_time = millis() + wait_interval;
+            set_led(1, 100);
         }
     }
 }
 
-void check_score() {
-    if (score && millis() > score_time) {
+void check_wait() {
+    if (wait && millis() > wait_time) {
+        if (!prox) {
+            set_shot(0);
+        }
+
         reset();
     }
 }
@@ -294,28 +228,25 @@ void check_score() {
 // FUNCTIONS (MIS)                                                            //
 //----------------------------------------------------------------------------//
 
-void board(int mode) {
+void set_shot(int mode) {
     // MODE:
-    // 0 = WRONG
-    // 1 = RIGHT
-
-    score = true;
-    score_time = millis() + score_interval;
+    // 0 = WRONG SHOT (MISS)
+    // 1 = RIGHT SHOT (SCORE)
 
     if (mode == 0) {
-        Serial1.print(0);
         set_led(2, 100);
-        play_tone(0, 3);
     } else {
-        Serial1.print(1);
         set_led(0, 100);
-        play_tone(3, 3);
     }
+
+    Serial1.print(mode);
+    delay(1000);
 }
 
 void reset() {
     vibr = false;
-    score = false;
+    prox = false;
+    wait = false;
     set_led(4, 100);
 }
 
@@ -326,5 +257,5 @@ void reset() {
 void loop() {
     check_prox();
     check_vibr();
-    check_score();
+    check_wait();
 }
