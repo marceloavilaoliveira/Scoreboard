@@ -1,7 +1,7 @@
 //----------------------------------------------------------------------------//
 // Filename    : Scoreboard.ino                                               //
 // Description : Smart Basketball Scoreboard                                  //
-// Version     : 1.2.0                                                        //
+// Version     : 1.2.1                                                        //
 // Author      : Marcelo Avila de Oliveira <marceloavilaoliveira@gmail.com>   //
 //----------------------------------------------------------------------------//
 
@@ -240,7 +240,6 @@ void set_shot(int mode) {
     }
 
     Serial1.print(mode);
-    delay(1000);
 }
 
 void reset() {
@@ -248,6 +247,7 @@ void reset() {
     prox = false;
     wait = false;
     set_led(4, 100);
+    delay(1000);
 }
 
 //----------------------------------------------------------------------------//
