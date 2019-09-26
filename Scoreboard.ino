@@ -1,7 +1,7 @@
 //----------------------------------------------------------------------------//
 // Filename    : Scoreboard.ino                                               //
 // Description : Smart Basketball Scoreboard                                  //
-// Version     : 1.1.0                                                        //
+// Version     : 1.2.0                                                        //
 // Author      : Marcelo Avila de Oliveira <marceloavilaoliveira@gmail.com>   //
 //----------------------------------------------------------------------------//
 
@@ -26,7 +26,7 @@ const int led_g_pin = 5;
 const int led_b_pin = 6;
 
 // TIME
-const unsigned long wait_interval = 3000;
+const unsigned long wait_interval = 2000;
 
 // MATH
 const float percent_to_bright_factor = 100 * log10(2) / log10(255);
