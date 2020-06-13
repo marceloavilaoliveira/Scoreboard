@@ -1,9 +1,18 @@
 //----------------------------------------------------------------------------//
 // Filename    : Scoreboard.ino                                               //
 // Description : Smart Basketball Scoreboard                                  //
-// Version     : 1.2.1                                                        //
+// Version     : 2.0.0                                                        //
 // Author      : Marcelo Avila de Oliveira <marceloavilaoliveira@gmail.com>   //
 //----------------------------------------------------------------------------//
+
+//----------------------------------------------------------------------------//
+// LIBRARIES                                                                  //
+//----------------------------------------------------------------------------//
+
+// TEMPERATURE & HUMIDITY LIBRARY
+#include "DHT.h"
+// MULTI SERIAL LIBRARY
+#include "SoftwareSerial.h"
 
 //----------------------------------------------------------------------------//
 // DEFINITIONS                                                                //
@@ -11,8 +20,18 @@
 
 // TURN ON DEBUG MODE
 // #define DEBUG
+// #define DEBUG_BLUE
 // #define DEBUG_PROX
 // #define DEBUG_VIBR
+// #define DEBUG_DHT
+
+// DHT SENSOR
+#define DHTPIN 7
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHTTYPE);
+
+// BLUETOOTH MODULE (RX, TX)
+SoftwareSerial Bluetooth(10, 11);
 
 //----------------------------------------------------------------------------//
 // CONSTANTS                                                                  //
@@ -27,6 +46,7 @@ const int led_b_pin = 6;
 
 // TIME
 const unsigned long wait_interval = 2000;
+const unsigned long dht_interval = 10000;
 
 // MATH
 const float percent_to_bright_factor = 100 * log10(2) / log10(255);
@@ -37,6 +57,10 @@ const float percent_to_bright_factor = 100 * log10(2) / log10(255);
 
 // TIME
 unsigned long wait_time;
+unsigned long dht_time;
+
+// HUMIDITY & TEMPERATURE
+float humi, temp, heat;
 
 // STATUS
 boolean prox = false;
@@ -55,6 +79,7 @@ void setup() {
     pinMode(led_g_pin, OUTPUT);
     pinMode(led_b_pin, OUTPUT);
 
+    // SET LED MAGENTA
     set_led(5, 100);
 
     // INITIATE SERIAL COMMUNICATION
@@ -63,6 +88,10 @@ void setup() {
     // INITIATE BLUETOOTH COMMUNICATION
     setup_bluetooth();
 
+    // INITIATE DHT SENSOR
+    dht.begin();
+
+    // SET LED BLUE
     set_led(4, 100);
 
     #ifdef DEBUG
@@ -72,22 +101,17 @@ void setup() {
 }
 
 void setup_bluetooth() {
-    #ifdef DEBUG
+    #ifdef DEBUG_BLUE
         Serial.println("Setting Bluetooth");
         Serial.println();
     #endif
 
-    Serial1.begin(38400);                   // Set baud rate
-    Serial1.print("\r\n+STWMOD=0\r\n");     // Set to work in slave mode
-    Serial1.print("\r\n+STNA=Arduino\r\n"); // Set name
-    Serial1.print("\r\n+STOAUT=1\r\n");     // Permit Paired device to connect me
-    Serial1.print("\r\n+STAUTO=0\r\n");     // Auto-connection should be forbidden here
-    delay(2000);                            // This delay is required.
-    Serial1.print("\r\n+INQ=1\r\n");        // Make the slave inquirable 
-    delay(2000);                            // This delay is required.
-    while (Serial1.available()) {           // Clear data
+    // SET BAUD RATE
+    Bluetooth.begin(9600);
+    // CLEAR ANY AVAILABLE DATA
+    while (Bluetooth.available()) {
         delay(50);
-        Serial1.read();
+        Bluetooth.read();
     }
 }
 
@@ -182,34 +206,43 @@ void set_led(int color, int bright) {
 
 void check_prox() {
     if (!prox) {
+        // CHECK PROXIMITY ONLY IF PROXIMITY WASN'T DETECTED
+
         if(digitalRead(prox_pin) == LOW) {
             #ifdef DEBUG_PROX
                 Serial.println("Proximity detected");
                 Serial.println();
             #endif
 
+            // SET LED GREEN
+            set_led(0, 100);
+            send_data(2);
+
             prox = true;
             if (!vibr) {
                 wait = true;
                 wait_time = millis() + wait_interval;
             }
-            set_shot(1);
         }
     }
 }
 
 void check_vibr() {
     if (!prox && !vibr) {
+        // CHECK VIBRATION ONLY IF PROXIMITY AND VIBRATION WEREN'T DETECTED
+
         if(digitalRead(vibr_pin) == HIGH) {
-            #ifdef DEBUG_PROX
+            #ifdef DEBUG_VIBR
                 Serial.println("Vibration detected");
                 Serial.println();
             #endif
 
+            // SET LED YELLOW
+            set_led(1, 100);
+
             vibr = true;
             wait = true;
             wait_time = millis() + wait_interval;
-            set_led(1, 100);
         }
     }
 }
@@ -217,10 +250,40 @@ void check_vibr() {
 void check_wait() {
     if (wait && millis() > wait_time) {
         if (!prox) {
-            set_shot(0);
+            // SET LED RED
+            set_led(2, 100);
+            send_data(1);
         }
 
         reset();
+    }
+}
+
+void check_dht() {
+    if (!prox && !vibr) {
+        // CHECK DHT ONLY IF VIBRATION WASN'T DETECTED
+
+        if (millis() > dht_time) {
+            humi = dht.readHumidity();
+            temp = dht.readTemperature();
+            heat = dht.computeHeatIndex(temp, humi, false);
+
+            #ifdef DEBUG_DHT
+                Serial.print("Humidity   : ");
+                Serial.print(humi);
+                Serial.println("%");
+                Serial.print("Temperature: ");
+                Serial.print(temp);
+                Serial.println("°C");
+                Serial.print("Head Index : ");
+                Serial.print(heat);
+                Serial.println("°C");
+                Serial.println("");
+           #endif
+
+            send_data(0);
+            dht_time = millis() + dht_interval;
+        }
     }
 }
 
@@ -228,26 +291,32 @@ void check_wait() {
 // FUNCTIONS (MIS)                                                            //
 //----------------------------------------------------------------------------//
 
-void set_shot(int mode) {
-    // MODE:
-    // 0 = WRONG SHOT (MISS)
-    // 1 = RIGHT SHOT (SCORE)
+void send_data(int shot) {
+    // SHOT:
+    // 0 = NO DATA
+    // 1 = WRONG SHOT (MISS)
+    // 2 = RIGHT SHOT (SCORE)
 
-    if (mode == 0) {
-        set_led(2, 100);
-    } else {
-        set_led(0, 100);
-    }
+    Bluetooth.print(humi);
+    Bluetooth.print(temp);
+    Bluetooth.print(heat);
+    Bluetooth.print(shot);
 
-    Serial1.print(mode);
+    #ifdef DEBUG_BLUE
+        Serial.println("Bluetooth sent");
+        Serial.println();
+    #endif
 }
 
 void reset() {
     vibr = false;
     prox = false;
     wait = false;
-    set_led(4, 100);
+
     delay(1000);
+
+    // SET LED BLUE
+    set_led(4, 100);
 }
 
 //----------------------------------------------------------------------------//
@@ -258,4 +327,5 @@ void loop() {
     check_prox();
     check_vibr();
     check_wait();
+    check_dht();
 }
